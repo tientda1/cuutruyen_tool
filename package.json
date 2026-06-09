@@ -1,0 +1,26 @@
+{
+  "name": "cuutruyen-tool",
+  "version": "1.0.0",
+  "description": "CLI tool tai truyen tu cuutruyen.net cho noi dung co quyen truy cap",
+  "main": "cli.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node cli.js",
+    "interactive": "node cli.js interactive",
+    "install-browsers": "npx playwright install chromium"
+  },
+  "dependencies": {
+    "axios": "^1.6.8",
+    "chalk": "^4.1.2",
+    "cli-table3": "^0.6.3",
+    "commander": "^12.0.0",
+    "enquirer": "^2.4.1",
+    "jszip": "^3.10.1",
+    "ora": "^5.4.1",
+    "playwright": "^1.43.0",
+    "playwright-extra": "^4.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
+    "sql.js": "^1.11.0",
+    "ws": "^8.20.0"
+  }
+}

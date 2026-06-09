@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+
+# Downloads / Manga media
+downloads/
+*.zip
+
+# Browser profiles containing session data, logs, local paths
+.browser-profile/
+.chrome-temp-profile/
+.coccoc-temp-profile/
+.edge-temp-profile/
+scratch/browser-profile-*/
+scratch/cuutruyen/
+
+# Cookies & Cache database
+cuutruyen-cookies.json
+cuutruyen-cache.db
+cuutruyen-browser-session.json
+
+# Temporary files & Logs
+*.log
+*.db-journal
+scratch/chapter-debug.json
+scratch/chapter-debug.png
+scratch/chapter-events.json
