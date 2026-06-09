@@ -605,9 +605,6 @@ async function loadChapterFromMangaPage(page, mangaUrl, chapterUrl, chapterTitle
   if (!ready) {
     throw new Error('Reader did not open. Keep the Coc Coc window open and click the requested chapter when the tool asks.');
   }
-
-  await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
-  await page.waitForTimeout(2500);
 }
 
 function makeChapterUrlCandidates(fullChapterUrl, mangaPath = '', chapterId = '') {
@@ -679,30 +676,36 @@ async function openDirectChapterWithReloads(page, chapterUrls, chapterPath, mang
   for (let urlIndex = 0; urlIndex < urls.length; urlIndex++) {
     const fullChapterUrl = urls[urlIndex];
     for (let attempt = 0; attempt < 4; attempt++) {
-    if (attempt === 0) {
-      console.log(chalk.cyan(`  Loading chapter directly: ${fullChapterUrl}`));
-      await navigate(page, fullChapterUrl).catch(() => {});
-    } else if (attempt === 1) {
-      console.log(chalk.gray('  Chapter page looks blank; reloading the same chapter URL...'));
-      await page.reload({ waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => {});
-    } else {
-      console.log(chalk.gray(`  Reopening chapter URL (${attempt}/3): ${fullChapterUrl}`));
-      await navigate(page, 'about:blank').catch(() => {});
-      await page.waitForTimeout(400);
-      await navigate(page, fullChapterUrl).catch(() => {});
-    }
+      if (attempt === 0) {
+        console.log(chalk.cyan(`  Loading chapter directly: ${fullChapterUrl}`));
+        await navigate(page, fullChapterUrl).catch(() => {});
+      } else if (attempt === 1) {
+        console.log(chalk.gray('  Chapter page looks blank; reloading the same chapter URL...'));
+        await page.reload({ waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => {});
+      } else {
+        console.log(chalk.gray(`  Reopening chapter URL (${attempt}/3): ${fullChapterUrl}`));
+        await navigate(page, 'about:blank').catch(() => {});
+        await page.waitForTimeout(400);
+        await navigate(page, fullChapterUrl).catch(() => {});
+      }
 
-    await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
-    await page.waitForTimeout(1800 + attempt * 700);
+      // Check immediately if the reader is already loaded
+      if (await waitForChapterReader(page, chapterPath, mangaPath, 4500)) {
+        return true;
+      }
 
-    if (await waitForChapterReader(page, chapterPath, mangaPath, 6000)) {
-      return true;
+      // Fallback: wait for networkidle and check again
+      await page.waitForLoadState('networkidle', { timeout: 6000 }).catch(() => {});
+      await page.waitForTimeout(400 + attempt * 400);
+
+      if (await waitForChapterReader(page, chapterPath, mangaPath, 4500)) {
+        return true;
+      }
+      if (await hasCloudflareErrorPage(page)) {
+        await page.waitForTimeout(4000 + attempt * 2000);
+        continue;
+      }
     }
-    if (await hasCloudflareErrorPage(page)) {
-      await page.waitForTimeout(5000 + attempt * 2000);
-      continue;
-    }
-  }
   }
 
   return false;
@@ -1158,8 +1161,7 @@ function makeChapterTitleCandidates(normalizedTitle) {
 
 async function captureRenderedCanvases(page, opts = {}) {
   const expectedCount = Number(opts.expectedCount || 0);
-  await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
-  await page.waitForTimeout(1000);
+  await page.waitForTimeout(250);
   await prepareReaderForCleanCapture(page);
 
   const images = await captureRenderedElementsWhileScrolling(page, 'canvas', {
@@ -1277,20 +1279,20 @@ async function captureRenderedElementsWhileScrolling(page, selector, opts = {}) 
           }
         }
       }).catch(() => {});
-      await page.waitForTimeout(forceFullScan ? 260 : 160);
-      await prepareReaderForCleanCapture(page);
-
       if (selector === 'canvas') {
         let blankQuality = null;
-        for (let attempt = 0; attempt < 4; attempt++) {
+        for (let attempt = 0; attempt < 5; attempt++) {
           blankQuality = await getCanvasContentQuality(handle);
           if (!blankQuality?.blankDark) break;
-          await page.waitForTimeout(180);
+          await page.waitForTimeout(100);
         }
         if (blankQuality?.blankDark) {
           continue;
         }
+      } else {
+        await page.waitForTimeout(50);
       }
+      await prepareReaderForCleanCapture(page);
 
       let dataUrl = '';
       let buffer = null;

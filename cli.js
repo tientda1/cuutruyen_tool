@@ -341,13 +341,13 @@ async function runInteractive(outputDir, outputFormat = 'folder', concurrency = 
                 outputDir,
                 outputFormat,
                 concurrency,
-                chapterDelay: 1500,
+                chapterDelay: 600,
                 from: 1,
                 to: 0,
                 redownload: false
               });
               if (i < items.length - 1) {
-                await new Promise(r => setTimeout(r, 3000));
+                await new Promise(r => setTimeout(r, 1500));
               }
             }
             console.log(chalk.green(`\n  ✓ Đã hoàn thành tải tất cả truyện trên trang ${pageNum}!\n`));
@@ -383,19 +383,19 @@ async function runInteractive(outputDir, outputFormat = 'folder', concurrency = 
                   outputDir,
                   outputFormat,
                   concurrency,
-                  chapterDelay: 1500,
+                  chapterDelay: 600,
                   from: 1,
                   to: 0,
                   redownload: false
                 });
                 if (i < autoItems.length - 1) {
-                  await new Promise(r => setTimeout(r, 3000));
+                  await new Promise(r => setTimeout(r, 1500));
                 }
               }
 
               console.log(chalk.green(`\n  ✓ Hoàn thành trang ${autoPageNum}`));
-              console.log(chalk.gray(`  Chờ 3 giây trước khi chuyển sang trang tiếp theo...`));
-              await new Promise(r => setTimeout(r, 3000));
+              console.log(chalk.gray(`  Chờ 1.5 giây trước khi chuyển sang trang tiếp theo...`));
+              await new Promise(r => setTimeout(r, 1500));
               autoPageNum++;
             }
             console.log(chalk.green(`\n  ✓ Đã hoàn thành tải tự động tất cả các trang!\n`));
@@ -650,7 +650,7 @@ async function handleMangaSelection(page, mangaUrl, titleHint, outputDir, output
 
     // Delay nhẹ giữa các chapter
     if (i < toDownload.length - 1) {
-      await new Promise(r => setTimeout(r, 1500));
+      await new Promise(r => setTimeout(r, 600));
     }
   }
 
@@ -870,7 +870,7 @@ program
         if (result) ok++; else fail++;
 
         if (i < selected.length - 1) {
-          await new Promise(r => setTimeout(r, parseInt(opts.delay) || 1500));
+          await new Promise(r => setTimeout(r, parseInt(opts.delay) || 600));
         }
       }
 
@@ -972,7 +972,7 @@ program
         if (summary.fail) mangaFail++; else mangaOk++;
 
         if (i < mangas.length - 1) {
-          await new Promise(r => setTimeout(r, parseInt(opts.mangaDelay, 10) || 3000));
+          await new Promise(r => setTimeout(r, parseInt(opts.mangaDelay, 10) || 1500));
         }
       }
 
