@@ -729,7 +729,7 @@ program
   .version('1.0.0')
   .option('--output <dir>', 'Thư mục lưu output', './downloads')
   .option('--format <type>', 'Định dạng lưu: folder hoặc zip', 'folder')
-  .option('--concurrency <n>', 'Số ảnh tải song song', '10')
+  .option('--concurrency <n>', 'Số ảnh tải song song', '16')
   .option('--no-cache', 'Bỏ qua cache, scrape mới hoàn toàn');
 
 // ─── INTERACTIVE (mặc định) ──────────────────────────────
@@ -739,7 +739,7 @@ program
   .description('Chế độ menu tương tác (mặc định)')
   .action(async (opts, cmd) => {
     const globalOpts = cmd.parent.opts();
-    await runInteractive(globalOpts.output, globalOpts.format, parseInt(globalOpts.concurrency) || 10);
+    await runInteractive(globalOpts.output, globalOpts.format, parseInt(globalOpts.concurrency) || 16);
   });
 
 // ─── LIST ────────────────────────────────────────────────

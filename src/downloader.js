@@ -7,11 +7,16 @@
 
 const path = require('path');
 const fs = require('fs');
+const http = require('http');
+const https = require('https');
 const axios = require('axios');
 const JSZip = require('jszip');
 const chalk = require('chalk');
 
-const DEFAULT_CONCURRENCY = 10;
+const httpAgent = new http.Agent({ keepAlive: true, maxSockets: 64 });
+const httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 64 });
+
+const DEFAULT_CONCURRENCY = 16;
 const DEFAULT_RETRIES = 3;
 
 // ─────────────────────────────────────────────────────────
@@ -85,6 +90,8 @@ async function fetchImage(url, opts = {}) {
       const res = await axios.get(url, {
         responseType: 'arraybuffer',
         timeout: 20000,
+        httpAgent,
+        httpsAgent,
         headers: {
           'Referer': referer || 'https://cuutruyen.net/',
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
