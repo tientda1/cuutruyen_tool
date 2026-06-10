@@ -167,11 +167,15 @@ async function downloadChapterToZip(imageUrls, mangaTitle, chapterNum, opts = {}
 
   ensureDir(outputDir);
 
+  const safeMangaTitle = sanitizeFilename(mangaTitle) || 'unknown';
+  const mangaDir = path.resolve(outputDir, safeMangaTitle);
+  ensureDir(mangaDir);
+
   const zipName = buildZipName(mangaTitle, chapterNum);
-  const zipPath = path.resolve(outputDir, zipName);
+  const zipPath = path.resolve(mangaDir, zipName);
   const folderName = buildFolderName(mangaTitle, chapterNum);
-  const folderPath = path.resolve(outputDir, folderName);
-  const outputRoot = path.resolve(outputDir);
+  const folderPath = path.resolve(mangaDir, folderName);
+  const outputRoot = path.resolve(mangaDir);
   let successCount = 0;
   let failCount = 0;
   let done = 0;

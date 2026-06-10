@@ -25,6 +25,7 @@ const { getMangaList, getMangaListPages, getMangaChapters, getChapterImages, BAS
 const { downloadChapterToZip, buildZipName } = require('./src/downloader');
 const { checkOllamaAvailable, pullModelIfNeeded } = require('./src/captcha');
 const { isAlreadyDownloaded, markDownloaded, getDownloadHistory, clearCache } = require('./src/cache');
+const { backupChapter } = require('./src/backup');
 
 // ─────────────────────────────────────────────────────────
 //  UI Helpers
@@ -240,6 +241,9 @@ async function downloadChapter(page, chapterUrl, outputDir, concurrency = 10, op
 
     // Lưu cache
     await markDownloaded(chapterUrl, result.outputPath || result.zipPath, result.successCount);
+
+    // Tự động backup lên Google Drive qua rclone
+    await backupChapter(result.outputPath || result.zipPath, mangaTitle, result.outputName || result.zipName, result.outputType);
 
     return result;
   } catch (e) {

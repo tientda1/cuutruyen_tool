@@ -1,0 +1,7 @@
+{
+  "rclone": {
+    "enabled": false,
+    "remote": "gdrive",
+    "path": "CuuTruyenBackup"
+  }
+}
