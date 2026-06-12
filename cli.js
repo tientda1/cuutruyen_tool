@@ -21,7 +21,7 @@ const path = require('path');
 const { Select, Input } = require('enquirer');
 
 const { createCuuTruyenPage, closeBrowser } = require('./src/browser');
-const { getMangaList, getMangaListPages, getMangaChapters, getChapterImages, BASE_URL } = require('./src/scraper');
+const { getMangaList, getMangaListPages, getMangaChapters, getChapterImages, getFollowedMangaList, getAllFollowedMangaList, BASE_URL } = require('./src/scraper');
 const { downloadChapterToZip, buildZipName } = require('./src/downloader');
 const { checkOllamaAvailable, pullModelIfNeeded } = require('./src/captcha');
 const { isAlreadyDownloaded, markDownloaded, getDownloadHistory, clearCache } = require('./src/cache');
@@ -273,6 +273,7 @@ async function runInteractive(outputDir, outputFormat = 'folder', concurrency = 
         message: '🌸 CuuTruyen — Chọn hành động:',
         choices: [
           { name: 'browse', message: '📚 Duyệt danh sách truyện' },
+          { name: 'followed', message: '💖 Truyện đã theo dõi' },
           { name: 'search', message: '🔍 Tìm kiếm truyện' },
           { name: 'url', message: '🔗 Nhập URL truyện / chapter trực tiếp' },
           { name: 'history', message: '📋 Lịch sử tải' },
@@ -411,6 +412,126 @@ async function runInteractive(outputDir, outputFormat = 'folder', concurrency = 
           const index = parseInt(navChoice, 10);
           if (!Number.isNaN(index) && index >= 0 && index < items.length) {
             const selectedManga = items[index];
+            await handleMangaSelection(page, selectedManga.url, selectedManga.title, outputDir, outputFormat, concurrency);
+            continue;
+          }
+          break;
+        }
+      }
+
+      // ── Followed ───────────────────────────────────
+      if (action === 'followed') {
+        let pageNum = 1;
+        while (true) {
+          const spinner = ora(`Đang tải danh sách truyện đã theo dõi trang ${pageNum}...`).start();
+          let loadFailed = false;
+          let res = { items: [], totalPages: 1, totalCount: 0 };
+          try {
+            res = await getFollowedMangaList(page, { pageNum, perPage: 20 });
+            spinner.succeed(`Trang ${pageNum}: Có ${res.items.length}/${res.totalCount} truyện`);
+          } catch (e) {
+            loadFailed = true;
+            spinner.fail(e.message);
+          }
+          
+          if (loadFailed) {
+            break;
+          }
+          
+          printMangaTable(res.items);
+
+          if (!res.items.length) {
+            console.log(chalk.yellow('  Danh sách trống hoặc không lấy được dữ liệu. Hãy đảm bảo bạn đã đăng nhập ở trình duyệt.'));
+            break;
+          }
+          
+          const navChoice = await new Select({
+            name: 'nav',
+            message: 'Chọn truyện hoặc điều hướng:',
+            choices: [
+              ...res.items.map((item, i) => ({ name: String(i), message: `${i + 1}. ${item.title}` })),
+              { name: 'download_all_followed', message: '📥 Tải tất cả truyện đã theo dõi ở trang này' },
+              { name: 'download_all_followed_full', message: '🔄 Tải tất cả truyện đã theo dõi (Tất cả các trang)' },
+              ...(pageNum < res.totalPages ? [{ name: 'next', message: '→ Trang tiếp' }] : []),
+              ...(pageNum > 1 ? [{ name: 'prev', message: '← Trang trước' }] : []),
+              { name: 'back', message: '↩ Quay lại' }
+            ]
+          }).run();
+
+          if (navChoice === 'next') { pageNum++; continue; }
+          if (navChoice === 'prev') { pageNum = Math.max(1, pageNum - 1); continue; }
+          if (navChoice === 'back') break;
+
+          if (navChoice === 'download_all_followed') {
+            console.log(chalk.cyan(`\n  Bắt đầu tải tất cả ${res.items.length} truyện đã theo dõi ở trang ${pageNum}...`));
+            for (let i = 0; i < res.items.length; i++) {
+              const manga = res.items[i];
+              if (page.isClosed && page.isClosed()) {
+                page = await createCuuTruyenPage(true);
+              }
+              console.log(chalk.bold(`\n  ===== [${i + 1}/${res.items.length}] ${manga.title} =====`));
+              await downloadMangaFromApiList(page, manga, {
+                outputDir,
+                outputFormat,
+                concurrency,
+                chapterDelay: 600,
+                from: 1,
+                to: 0,
+                redownload: false
+              });
+              if (i < res.items.length - 1) {
+                await new Promise(r => setTimeout(r, 1500));
+              }
+            }
+            console.log(chalk.green(`\n  ✓ Đã hoàn thành tải tất cả truyện đã theo dõi trên trang ${pageNum}!\n`));
+            continue;
+          }
+
+          if (navChoice === 'download_all_followed_full') {
+            console.log(chalk.cyan(`\n  Bắt đầu lấy toàn bộ danh sách truyện đã theo dõi...`));
+            const spinnerFull = ora('Đang lấy danh sách...').start();
+            let allFollowed = [];
+            try {
+              allFollowed = await getAllFollowedMangaList(page);
+              spinnerFull.succeed(`Tìm thấy tổng cộng ${allFollowed.length} truyện đã theo dõi.`);
+            } catch (err) {
+              spinnerFull.fail(err.message);
+              continue;
+            }
+            
+            if (!allFollowed.length) {
+              console.log(chalk.yellow('  Danh sách truyện đã theo dõi trống.'));
+              continue;
+            }
+
+            console.log(chalk.cyan(`\n  Bắt đầu tải tự động ${allFollowed.length} truyện đã theo dõi...`));
+            for (let i = 0; i < allFollowed.length; i++) {
+              const manga = allFollowed[i];
+              if (page.isClosed && page.isClosed()) {
+                page = await createCuuTruyenPage(true);
+              }
+              console.log(chalk.bold(`\n  ===== [${i + 1}/${allFollowed.length}] ${manga.title} =====`));
+              await downloadMangaFromApiList(page, manga, {
+                outputDir,
+                outputFormat,
+                concurrency,
+                chapterDelay: 600,
+                from: 1,
+                to: 0,
+                redownload: false
+              });
+              if (i < allFollowed.length - 1) {
+                await new Promise(r => setTimeout(r, 1500));
+              }
+            }
+            console.log(chalk.green(`\n  ✓ Đã tải xong toàn bộ truyện đã theo dõi!\n`));
+            continue;
+          }
+
+          // Chọn truyện
+          const index = parseInt(navChoice, 10);
+          if (!Number.isNaN(index) && index >= 0 && index < res.items.length) {
+            const selectedManga = res.items[index];
             await handleMangaSelection(page, selectedManga.url, selectedManga.title, outputDir, outputFormat, concurrency);
             continue;
           }
@@ -894,6 +1015,7 @@ program
   .alias('ds')
   .description('Quét danh sách truyện bằng API rồi tải lần lượt từng bộ')
   .option('--search <keyword>', 'Dùng API tìm kiếm theo từ khóa thay vì recently_updated')
+  .option('--followed', 'Tải danh sách truyện đã theo dõi')
   .option('--start-page <n>', 'Trang bắt đầu quét', '1')
   .option('--max-pages <n>', 'Số trang API cần quét; dùng 0 để quét tới khi hết', '1')
   .option('--per-page <n>', 'Số truyện mỗi trang API', '50')
@@ -912,25 +1034,36 @@ program
     let page = null;
 
     try {
-      const spinner = ora('Đang quét danh sách truyện bằng API...').start();
+      const spinner = ora(opts.followed ? 'Đang quét danh sách truyện đã theo dõi bằng API...' : 'Đang quét danh sách truyện bằng API...').start();
       let mangas;
-      const listOpts = {
-        search: opts.search || '',
-        startPage: parseInt(opts.startPage, 10) || 1,
-        maxPages: Number.isNaN(maxPages) ? 1 : maxPages,
-        perPage,
-        useCache: globalOpts.cache !== false,
-        onPage: ({ pageNum, fresh, total }) => {
-          spinner.text = `API trang ${pageNum}: +${fresh.length} truyện mới, tổng ${total}`;
-        }
-      };
 
-      try {
-        mangas = await getMangaListPages(null, listOpts);
-      } catch (err) {
-        spinner.text = `API lỗi (${err.message}); mở browser để thử fallback...`;
-        page = await createCuuTruyenPage(true);
-        mangas = await getMangaListPages(page, listOpts);
+      if (opts.followed) {
+        try {
+          mangas = await getAllFollowedMangaList(null);
+        } catch (err) {
+          spinner.text = `API lỗi (${err.message}); mở browser để thử fallback...`;
+          page = await createCuuTruyenPage(true);
+          mangas = await getAllFollowedMangaList(page);
+        }
+      } else {
+        const listOpts = {
+          search: opts.search || '',
+          startPage: parseInt(opts.startPage, 10) || 1,
+          maxPages: Number.isNaN(maxPages) ? 1 : maxPages,
+          perPage,
+          useCache: globalOpts.cache !== false,
+          onPage: ({ pageNum, fresh, total }) => {
+            spinner.text = `API trang ${pageNum}: +${fresh.length} truyện mới, tổng ${total}`;
+          }
+        };
+
+        try {
+          mangas = await getMangaListPages(null, listOpts);
+        } catch (err) {
+          spinner.text = `API lỗi (${err.message}); mở browser để thử fallback...`;
+          page = await createCuuTruyenPage(true);
+          mangas = await getMangaListPages(page, listOpts);
+        }
       }
 
       if (opts.mangaLimit) {

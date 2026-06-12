@@ -14,6 +14,24 @@ const { getCachedMangaList, saveMangaList, getCachedChapters, saveChapters } = r
 const BASE_URL = 'https://cuutruyen.net';
 const BASE_HOST = 'cuutruyen.net';
 const COOKIES_FILE = path.join(__dirname, '..', 'cuutruyen-cookies.json');
+const AUTH_FILE = path.join(__dirname, '..', 'cuutruyen-auth.json');
+
+function getAuthHeaders() {
+  try {
+    if (!fs.existsSync(AUTH_FILE)) return {};
+    const auth = JSON.parse(fs.readFileSync(AUTH_FILE, 'utf8'));
+    if (auth && auth.m4u_uid && auth.m4u_token) {
+      return {
+        'cuutruyen-client': 'OfficialWebApp-20250805',
+        'm4u_uid': auth.m4u_uid,
+        'm4u_token': auth.m4u_token
+      };
+    }
+  } catch (err) {
+    // ignore
+  }
+  return {};
+}
 
 dns.setServers(['1.1.1.1', '8.8.8.8']);
 let _resolvedBaseIp = null;
@@ -202,6 +220,7 @@ async function apiGet(pathname) {
   const cookieHeader = getCookieHeader();
   const httpsAgent = await createHttpsAgent();
   const delays = [0, 5000, 12000, 25000];
+  const authHeaders = getAuthHeaders();
 
   for (let attempt = 0; attempt < delays.length; attempt++) {
     if (delays[attempt]) {
@@ -216,6 +235,7 @@ async function apiGet(pathname) {
         proxy: false,
         headers: {
           ...(cookieHeader ? { Cookie: cookieHeader } : {}),
+          ...authHeaders,
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
           'Accept': 'application/json, text/plain, */*',
           'Accept-Language': 'vi-VN,vi;q=0.9,en;q=0.8',
@@ -1617,6 +1637,122 @@ async function prepareReaderForCleanCapture(page) {
   }).catch(() => {});
 }
 
+async function getFollowedMangaList(page, opts = {}) {
+  const { pageNum = 1, perPage = 20 } = opts;
+
+  // Try to use direct Node API with cached auth token
+  try {
+    const apiPath = `/api/v2/mangas/following?page=${pageNum}&per_page=${perPage}`;
+    const json = await apiGet(apiPath);
+    const items = mapMangaItems(json.data || []);
+    return { 
+      items, 
+      totalPages: json._metadata?.total_pages || 1, 
+      totalCount: json._metadata?.total_count || items.length 
+    };
+  } catch (err) {
+    console.log(chalk.gray(`  Node API followed list failed: ${err.message}`));
+  }
+
+  // Fallback to browser evaluation
+  if (!page) {
+    throw new Error('Đăng nhập phiên API đã hết hạn. Hãy chạy browser để đồng bộ lại thông tin đăng nhập.');
+  }
+  await ensureConnected(page);
+
+  const result = await page.evaluate(async ({ pageNum, perPage, baseUrl }) => {
+    try {
+      // Get auth from IndexedDB inside browser context
+      const authData = await new Promise((resolve) => {
+        if (!window.indexedDB) return resolve(null);
+        const openRequest = window.indexedDB.open('manga4u');
+        openRequest.onerror = () => resolve(null);
+        openRequest.onsuccess = () => {
+          const db = openRequest.result;
+          if (!db.objectStoreNames.contains('auth')) {
+            db.close();
+            return resolve(null);
+          }
+          try {
+            const tx = db.transaction('auth', 'readonly');
+            const store = tx.objectStore('auth');
+            const getAllRequest = store.getAll();
+            tx.oncomplete = () => {
+              db.close();
+              resolve(getAllRequest.result);
+            };
+            tx.onerror = () => {
+              db.close();
+              resolve(null);
+            };
+          } catch (e) {
+            db.close();
+            resolve(null);
+          }
+        };
+      });
+
+      if (!authData || authData.length === 0) {
+        throw new Error('Không tìm thấy phiên đăng nhập trong trình duyệt. Vui lòng đăng nhập Cứu Truyện trước.');
+      }
+
+      const uid = String(authData[0].user.id);
+      const token = authData[0].authToken;
+
+      const apiUrl = `${baseUrl}/api/v2/mangas/following?page=${pageNum}&per_page=${perPage}`;
+      let res = null;
+      for (const delay of [0, 5000, 12000, 25000]) {
+        if (delay) await new Promise(resolve => setTimeout(resolve, delay));
+        res = await fetch(apiUrl, {
+          headers: {
+            'Accept': 'application/json, text/plain, */*',
+            'cuutruyen-client': 'OfficialWebApp-20250805',
+            'm4u_uid': uid,
+            'm4u_token': token
+          }
+        });
+        if (res.status !== 429) break;
+      }
+      if (!res.ok) throw new Error(`Followed list API Error: ${res.status}`);
+      const json = await res.json();
+      const data = json.data || [];
+
+      return {
+        error: null,
+        items: data.map(item => ({
+          url: `${baseUrl}/mangas/${item.id}`,
+          title: item.name || '',
+          cover: item.cover_url || item.cover_mobile_url || '',
+          status: item.status || ''
+        })),
+        totalPages: json._metadata?.total_pages || 1,
+        totalCount: json._metadata?.total_count || data.length
+      };
+    } catch (err) {
+      return { error: err.toString(), items: [], totalPages: 1, totalCount: 0 };
+    }
+  }, { pageNum, perPage, baseUrl: BASE_URL });
+
+  if (result.error) {
+    throw new Error(`Lấy danh sách theo dõi từ API thất bại (${result.error}). Hãy đảm bảo bạn đã đăng nhập.`);
+  }
+
+  return { items: result.items, totalPages: result.totalPages, totalCount: result.totalCount };
+}
+
+async function getAllFollowedMangaList(page) {
+  let pageNum = 1;
+  const allItems = [];
+  while (true) {
+    const { items, totalPages } = await getFollowedMangaList(page, { pageNum, perPage: 50 });
+    if (!items || items.length === 0) break;
+    allItems.push(...items);
+    if (pageNum >= totalPages) break;
+    pageNum++;
+  }
+  return allItems;
+}
+
 module.exports = {
   getMangaList,
   getMangaListPages,
@@ -1624,5 +1760,7 @@ module.exports = {
   getChapterImages,
   collectImageUrls,
   absoluteUrl,
+  getFollowedMangaList,
+  getAllFollowedMangaList,
   BASE_URL
 };

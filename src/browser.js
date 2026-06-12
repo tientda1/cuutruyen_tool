@@ -381,6 +381,56 @@ async function getOrCreateToolPage(context, pages = []) {
   return blankPage || await context.newPage();
 }
 
+const AUTH_FILE = path.join(__dirname, '..', 'cuutruyen-auth.json');
+
+async function extractAndSaveAuth(page) {
+  try {
+    const authData = await page.evaluate(async () => {
+      return new Promise((resolve) => {
+        if (!window.indexedDB) return resolve(null);
+        const openRequest = window.indexedDB.open('manga4u');
+        openRequest.onerror = () => resolve(null);
+        openRequest.onsuccess = () => {
+          const db = openRequest.result;
+          if (!db.objectStoreNames.contains('auth')) {
+            db.close();
+            return resolve(null);
+          }
+          try {
+            const tx = db.transaction('auth', 'readonly');
+            const store = tx.objectStore('auth');
+            const getAllRequest = store.getAll();
+            tx.oncomplete = () => {
+              db.close();
+              resolve(getAllRequest.result);
+            };
+            tx.onerror = () => {
+              db.close();
+              resolve(null);
+            };
+          } catch (e) {
+            db.close();
+            resolve(null);
+          }
+        };
+      });
+    }).catch(() => null);
+
+    if (authData && authData.length > 0 && authData[0].authToken && authData[0].user?.id) {
+      const auth = {
+        m4u_uid: String(authData[0].user.id),
+        m4u_token: String(authData[0].authToken),
+        username: authData[0].user.username,
+        email: authData[0].user.email,
+        updatedAt: Date.now()
+      };
+      fs.writeFileSync(AUTH_FILE, JSON.stringify(auth, null, 2));
+    }
+  } catch (err) {
+    // Best-effort only
+  }
+}
+
 async function navigate(page, url, opts = {}) {
   const retries = opts.retries || 3;
   const timeout = opts.timeout || 60000;
@@ -414,6 +464,7 @@ async function navigate(page, url, opts = {}) {
         }
       }
 
+      await extractAndSaveAuth(page);
       return true;
     } catch (err) {
       if (attempt >= retries) {
@@ -513,6 +564,7 @@ async function createCuuTruyenPage(headless = true) {
     await page.bringToFront().catch(() => {});
   }
 
+  await extractAndSaveAuth(page);
   return page;
 }
 
@@ -525,3 +577,4 @@ module.exports = {
   closeBrowser,
   createCuuTruyenPage
 };
+
